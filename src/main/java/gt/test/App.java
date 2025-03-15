@@ -6,16 +6,31 @@ package gt.test;
 import java.awt.geom.Point2D;
 import java.io.File;
 import java.io.IOException;
+import java.io.StringReader;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.IntStream;
 
+import org.geotools.api.coverage.PointOutsideCoverageException;
+import org.geotools.api.geometry.MismatchedDimensionException;
+import org.geotools.api.referencing.FactoryException;
+import org.geotools.api.referencing.NoSuchAuthorityCodeException;
 import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.api.referencing.operation.MathTransform;
 import org.geotools.api.referencing.operation.TransformException;
 import org.geotools.coverage.grid.GridCoverage2D;
 import org.geotools.gce.geotiff.GeoTiffReader;
 import org.geotools.geometry.Position2D;
+import org.geotools.geometry.jts.JTS;
 import org.geotools.referencing.CRS;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Point;
 
 import it.geosolutions.imageio.core.BasicAuthURI;
 import it.geosolutions.imageio.plugins.cog.CogImageReadParam;
@@ -23,22 +38,38 @@ import it.geosolutions.imageioimpl.plugins.cog.CogImageInputStreamSpi;
 import it.geosolutions.imageioimpl.plugins.cog.CogImageReaderSpi;
 import it.geosolutions.imageioimpl.plugins.cog.CogSourceSPIProvider;
 import it.geosolutions.imageioimpl.plugins.cog.HttpRangeReader;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonReader;
+import jakarta.json.JsonStructure;
+import java.util.Arrays;
 
 public class App {
     public String getGreeting() {
         return "Hello World!";
     }
+    
+    
+    /*
+     * {"coordinates":[[2614037.540657683,1258741.4219928128],[2614092.822957732,1258722.7526672513],[2614125.003737639,1258744.1654997708],[2614132.859211638,1258715.2282893215],[2614159.764918181,1258726.942644058]],
+     * "distances":[58.349605102569754,38.65374486328647,29.984506337976217,29.345240695401714],
+     * "projection":"EPSG:2056",
+     * "samples":500}
+     */
+    
+    private static GeometryFactory geometryFactory =  new GeometryFactory();
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, NoSuchAuthorityCodeException, FactoryException, MismatchedDimensionException, TransformException {
+        
         System.out.println(new App().getGreeting());
         
         // https://data.geo.admin.ch/ch.swisstopo.swissalti3d/swissalti3d_2019_2614-1258/swissalti3d_2019_2614-1258_0.5_2056_5728.tif
-        File file = new File("/Users/stefan/Downloads/swissalti3d_2019_2614-1258_0.5_2056_5728.tif");
+        //File file = new File("/Users/stefan/Downloads/swissalti3d_2019_2614-1258_0.5_2056_5728.tif");
+        File file = new File("/Users/stefan/Downloads/ch.so.agi.lidar_2014.dtm.tif");
         //URL fileUrl = new URL("https://data.geo.admin.ch/ch.swisstopo.swissalti3d/swissalti3d_2019_2614-1258/swissalti3d_2019_2614-1258_0.5_2056_5728.tif");
         URL fileUrl = new URL("https://files.geo.so.ch/ch.so.agi.lidar_2014.dtm/aktuell/ch.so.agi.lidar_2014.dtm.tif");
         
-        String url =
-                "https://s3-us-west-2.amazonaws.com/sentinel-cogs/sentinel-s2-l2a-cogs/5/C/MK/2018/10/S2B_5CMK_20181020_0_L2A/B01.tif";
         BasicAuthURI cogUri = new BasicAuthURI(fileUrl, false);
         HttpRangeReader rangeReader = new HttpRangeReader(cogUri.getUri(), CogImageReadParam.DEFAULT_HEADER_LENGTH);
         
@@ -48,26 +79,118 @@ public class App {
                 new CogImageReaderSpi(),
                 new CogImageInputStreamSpi(),
                 rangeReader.getClass().getName());
-
         
-        
-      GeoTiffReader reader = new GeoTiffReader(input);
+        //GeoTiffReader reader = new GeoTiffReader(input);
+        GeoTiffReader reader = new GeoTiffReader(file);
       
       GridCoverage2D coverage = reader.read(null);
-//      CoordinateReferenceSystem crs = reader.getCoordinateReferenceSystem();
+      CoordinateReferenceSystem rasterCRS = reader.getCoordinateReferenceSystem();
+      
+      CoordinateReferenceSystem inputCRS = CRS.decode("EPSG:4326");
 
-      {
-          Point2D.Double pos = new Point2D.Double(2614053.61, 1258756.05);
-          double[] height = new double[1];
-          coverage.evaluate(pos,height);
-          System.out.println(height[0]);
+//      System.out.println(rasterCRS.getName().getCode());
+//      System.out.println(inputCRS.getName());
+//      
+//      System.out.println(rasterCRS.getName().getCode().equalsIgnoreCase(inputCRS.getName().getCode()));
+//
+//      {
+//          Point2D.Double pos = new Point2D.Double(2614053.61, 1258756.05);
+//          double[] height = new double[1];
+//          coverage.evaluate(pos,height);
+//          System.out.println(height[0]);
+//      }
+//      {
+//          Point2D.Double pos = new Point2D.Double(2625592, 1239628);
+//          double[] height = new double[1];
+//          coverage.evaluate(pos,height);
+//          System.out.println(height[0]);
+//      }
+//      {
+//          try {
+//              Point2D.Double pos = new Point2D.Double(1625592, 1239628);
+//              double[] height = new double[1];
+//              coverage.evaluate(pos,height);
+//              System.out.println(height[0]);              
+//          } catch (PointOutsideCoverageException e) {
+//              System.out.println("elevation=0");
+//          }
+//      }
+//      {
+//          Point2D.Double pos = null;
+//          if (!rasterCRS.getName().getCode().equalsIgnoreCase(inputCRS.getName().getCode())) {
+//              MathTransform mTrans = CRS.findMathTransform(inputCRS, rasterCRS);
+//              Point p = geometryFactory.createPoint(new Coordinate(47.4794, 7.6251));
+//              Geometry transformed = JTS.transform(p, mTrans);
+//              System.out.println(transformed);
+//
+//              pos = new Point2D.Double(transformed.getCoordinate().x, transformed.getCoordinate().y);
+//          } else {
+//              pos = new Point2D.Double(2614056.0755135366, 1258753.5176031294);
+//          }
+//          double[] height = new double[1];
+//          coverage.evaluate(pos,height);
+//          System.out.println(height[0]);
+//      }
+      
+
+      String jsonString = "{\"coordinates\":[[2614037.540657683,1258741.4219928128],[2614092.822957732,1258722.7526672513],[2614125.003737639,1258744.1654997708],[2614132.859211638,1258715.2282893215],[2614159.764918181,1258726.942644058]],\"distances\":[58.349605102569754,38.65374486328647,29.984506337976217,29.345240695401714],\"projection\":\"EPSG:2056\",\"samples\":500}";
+      var query = parseJsonString(jsonString);
+      System.out.println(query);
+      
+      List<List<Double>> coordinates = (List<List<Double>>) query.get("coordinates");
+      List<Double> distances = (List<Double>) query.get("distances");
+      List<Double> elevations = new ArrayList<>();
+      int numSamples = (int) query.get("samples");
+      
+      // Compute cumulative distances
+      List<Double> cumDistances = new ArrayList<>();
+      cumDistances.add(0.0);
+      IntStream.range(0, distances.size()).forEach(i -> cumDistances.add(cumDistances.get(i) + distances.get(i)));
+      double totDistance = distances.stream().mapToDouble(Double::doubleValue).sum();
+
+      // Initialize tracking variables
+      double x = 0;
+      int i = 0;
+      double[] p1 = {coordinates.get(i).get(0), coordinates.get(i).get(1)};
+      double[] p2 = {coordinates.get(i + 1).get(0), coordinates.get(i + 1).get(1)};
+      double[] dr = {p2[0] - p1[0], p2[1] - p1[1]};
+
+      for (int s = 0; s < numSamples; s++) {
+          // Find correct segment for current x
+          while (i + 2 < cumDistances.size() && x > cumDistances.get(i + 1)) {
+              i++;
+              p1 = new double[]{coordinates.get(i).get(0), coordinates.get(i).get(1)};
+              p2 = new double[]{coordinates.get(i + 1).get(0), coordinates.get(i + 1).get(1)};
+              dr = new double[]{p2[0] - p1[0], p2[1] - p1[1]};
+          }
+
+          // Compute interpolation fraction
+          double mu = 0;
+          try {
+              mu = (x - cumDistances.get(i)) / (cumDistances.get(i + 1) - cumDistances.get(i));
+          } catch (ArithmeticException e) {
+              mu = 0;
+          }
+
+          // Transform interpolated point
+          double interpX = p1[0] + mu * dr[0];
+          double interpY = p1[1] + mu * dr[1];
+//          System.out.println(interpX);
+
+          try {
+              Point2D.Double pos = new Point2D.Double(interpX, interpY);
+              double[] height = new double[1];
+              coverage.evaluate(pos, height);
+              elevations.add(height[0]);
+          } catch (PointOutsideCoverageException e) {
+              elevations.add(0.0);
+          }
+                    
+          x += totDistance / (numSamples - 1);
       }
-      {
-          Point2D.Double pos = new Point2D.Double(2625592, 1239628);
-          double[] height = new double[1];
-          coverage.evaluate(pos,height);
-          System.out.println(height[0]);
-      }
+      
+      System.out.println(elevations);
+      
       
       coverage.dispose(true);
       reader.dispose();
@@ -83,10 +206,48 @@ public class App {
             System.out.println("Thread: " + t.getName() + " | Daemon: " + t.isDaemon());
         }
         
-        // OkHttpClient (von http cog reader (z.B. würde aws sdk verwenden)) hat keep alive von 60s. Weil es ein non-daemon thread ist,
+        // OkHttpClient (von http cog reader (S3 impl z.B. würde aws sdk verwenden)) hat keep alive von 60s. Weil es ein non-daemon thread ist,
         // wird solange gewartet, bis sich das Programm beendet. Als Server-Anwendung wohl egal. Ggf. beim Herunterfahren Probleme?
         System.exit(0);
     }
+    
+    
+    public static Map<String, Object> parseJsonString(String jsonString) {
+        // Read JSON string into a JsonObject
+        JsonReader reader = Json.createReader(new StringReader(jsonString));
+        JsonObject jsonObject = reader.readObject();
+        reader.close();
+        
+        // Extract coordinates (convert JsonArray to List<List<Double>>)
+        List<List<Double>> coordinates = new ArrayList<>();
+        JsonArray coordinatesArray = jsonObject.getJsonArray("coordinates");
+        for (int i = 0; i < coordinatesArray.size(); i++) {
+            JsonArray point = coordinatesArray.getJsonArray(i);
+            coordinates.add(Arrays.asList(point.getJsonNumber(0).doubleValue(), point.getJsonNumber(1).doubleValue()));
+        }
+
+        // Extract distances (convert JsonArray to List<Double>)
+        List<Double> distances = new ArrayList<>();
+        JsonArray distancesArray = jsonObject.getJsonArray("distances");
+        for (int i = 0; i < distancesArray.size(); i++) {
+            distances.add(distancesArray.getJsonNumber(i).doubleValue());
+        }
+
+        // Extract other fields
+        String projection = jsonObject.getString("projection");
+        int samples = jsonObject.getInt("samples");
+
+        // Store in a map
+        Map<String, Object> query = new HashMap<>();
+        query.put("coordinates", coordinates);
+        query.put("distances", distances);
+        query.put("projection", projection);
+        query.put("samples", samples);
+
+        return query;
+    }
+
+    
     
 //    public static double getHeightAtCoordinate(GridCoverage2D coverage, double lon, double lat) throws TransformException {
 //        // Get the coordinate reference system
